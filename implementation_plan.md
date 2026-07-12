@@ -7,7 +7,7 @@ Build a production-grade monorepo (`blind-navigator/`) with **four subprojects**
 ## User Review Required
 
 > [!IMPORTANT]
-> **MongoDB connection**: The plan uses `docker-compose` to spin up MongoDB locally. Confirm you have Docker Desktop installed and running on Windows.
+> **MongoDB connection**: The plan assumes MongoDB is running locally on your machine on port 27017 (e.g., as a local Windows service or via MongoDB Atlas). Confirm you have MongoDB installed and running or have a connection URI.
 
 > [!IMPORTANT]
 > **React Native**: The mobile app will be scaffolded with Expo (managed workflow) for faster iteration. If you need a bare React Native CLI project instead (e.g., for native module linking), let me know before I start.
@@ -35,7 +35,7 @@ Build a production-grade monorepo (`blind-navigator/`) with **four subprojects**
 
 | Phase | Subproject | Key Deliverables |
 |-------|-----------|-----------------|
-| 1 | **Backend** | FastAPI + Motor, JWT auth, all CRUD routers, Dockerfile, docker-compose, seed script |
+| 1 | **Backend** | FastAPI + Motor, JWT auth, all CRUD routers, local setup instructions, seed script |
 | 2 | **Firmware** | PlatformIO C++ project, ultrasonic + state machine + BLE GATT + vibration motor |
 | 3 | **Mobile App** | React Native/Expo, BLE client, TFLite detection module, color detection, alarm handler, TTS, REST client, 3 screens |
 | 4 | **Web Dashboard** | React (Vite), login, sessions list/detail, summary page with charts |
@@ -46,18 +46,10 @@ Build a production-grade monorepo (`blind-navigator/`) with **four subprojects**
 
 Async FastAPI application using Motor for MongoDB, with JWT auth, five collection routers, and a dashboard aggregation endpoint.
 
-#### [NEW] [docker-compose.yml](file:///c:/Users/Asif/OneDrive/Desktop/BLIND%20AI%20APP/blind-navigator/docker-compose.yml)
-- `mongo` service (mongo:7, port 27017, named volume)
-- `backend` service (builds from `./backend`, port 8000, depends on mongo)
-- `.env` file referenced for `MONGO_URI`, `JWT_SECRET`, `JWT_ALGORITHM`
-
-#### [NEW] [.env](file:///c:/Users/Asif/OneDrive/Desktop/BLIND%20AI%20APP/blind-navigator/.env)
-- `MONGO_URI=mongodb://mongo:27017/blind_navigator`
+#### [NEW] [.env](file:///c:/Users/nitya/OneDrive/Desktop/BLIND%20AI%20APP/blind-navigator/.env)
+- `MONGO_URI=mongodb://localhost:27017/blind_navigator`
 - `JWT_SECRET=change-me-in-production`
 - `JWT_ALGORITHM=HS256`
-
-#### [NEW] [backend/Dockerfile](file:///c:/Users/Asif/OneDrive/Desktop/BLIND%20AI%20APP/blind-navigator/backend/Dockerfile)
-- Python 3.11-slim, pip install from requirements.txt, uvicorn entrypoint
 
 #### [NEW] [backend/requirements.txt](file:///c:/Users/Asif/OneDrive/Desktop/BLIND%20AI%20APP/blind-navigator/backend/requirements.txt)
 - fastapi, uvicorn, motor, pydantic[email], python-jose[cryptography], passlib[bcrypt], python-dotenv
@@ -203,11 +195,17 @@ PlatformIO project targeting ESP32 with NimBLE-Arduino for BLE, HC-SR04 ultrason
 ### Automated Tests
 ```bash
 # Backend — confirm it starts and responds
-cd blind-navigator
-docker-compose up -d
+# 1. Start MongoDB locally (e.g., via Windows Services or `mongod`)
+# 2. Start the backend:
+cd blind-navigator/backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# 3. Test and seed (in a separate terminal):
 curl http://localhost:8000/docs          # Swagger UI
 curl -X POST http://localhost:8000/auth/register -H "Content-Type: application/json" -d '{"name":"test","email":"test@test.com","password":"test1234","role":"user"}'
-python backend/seed.py                  # populate demo data
+python seed.py                  # populate demo data
+```
 
 # Firmware — compile check (no hardware needed)
 cd firmware && pio run                  # must compile without errors
