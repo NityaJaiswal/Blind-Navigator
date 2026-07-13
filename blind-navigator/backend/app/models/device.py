@@ -1,15 +1,14 @@
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime
 
 class DeviceCreate(BaseModel):
-    device_name: str
-    mac_address: str
+    mac_address: str = Field(..., description="ESP32 BLE MAC Address")
     user_id: str
 
-class DeviceResponse(DeviceCreate):
+class DeviceResponse(BaseModel):
     id: str = Field(..., alias="_id")
-    registered_at: datetime = Field(default_factory=datetime.utcnow)
+    mac_address: str
+    user_id: str
 
     class Config:
         populate_by_name = True
