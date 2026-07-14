@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import * as SecureStore from "expo-secure-store";
+
 import LoginScreen from "./src/screens/LoginScreen";
 import CameraScreen from "./src/screens/CameraScreen";
 import HomeScreen from "./src/screens/HomeScreen";
@@ -26,19 +27,38 @@ export default function App() {
 
   if (screen === "loading") {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
         <ActivityIndicator size="large" />
       </View>
     );
   }
 
   if (screen === "login") {
-    return <LoginScreen onLoginSuccess={() => setScreen("camera")} />;
+    return (
+      <LoginScreen
+        onLoginSuccess={() => setScreen("camera")}
+      />
+    );
   }
 
   if (screen === "settings") {
-    return <HomeScreen onDone={() => setScreen("camera")} onLogout={handleLogout} />;
+    return (
+      <HomeScreen
+        onBackToCamera={() => setScreen("camera")}
+        onLogout={handleLogout}
+      />
+    );
   }
 
-  return <CameraScreen onOpenSettings={() => setScreen("settings")} />;
+  return (
+    <CameraScreen
+      onOpenSettings={() => setScreen("settings")}
+    />
+  );
 }
