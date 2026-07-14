@@ -19,6 +19,11 @@ export default function App() {
     setScreen(token ? "camera" : "login");
   };
 
+  const handleLogout = async () => {
+    await SecureStore.deleteItemAsync("access_token");
+    setScreen("login");
+  };
+
   if (screen === "loading") {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -32,7 +37,7 @@ export default function App() {
   }
 
   if (screen === "settings") {
-    return <HomeScreen onDone={() => setScreen("camera")} />;
+    return <HomeScreen onDone={() => setScreen("camera")} onLogout={handleLogout} />;
   }
 
   return <CameraScreen onOpenSettings={() => setScreen("settings")} />;
