@@ -2,11 +2,13 @@ import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import LoginScreen from "./src/screens/LoginScreen";
+import CameraScreen from "./src/screens/CameraScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 
+type Screen = "loading" | "login" | "camera" | "settings";
+
 export default function App() {
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [screen, setScreen] = useState<Screen>("loading");
 
   useEffect(() => {
     checkExistingLogin();
@@ -14,11 +16,10 @@ export default function App() {
 
   const checkExistingLogin = async () => {
     const token = await SecureStore.getItemAsync("access_token");
-    setIsLoggedIn(!!token);
-    setCheckingAuth(false);
+    setScreen(token ? "camera" : "login");
   };
 
-  if (checkingAuth) {
+  if (screen === "loading") {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" />
@@ -26,9 +27,13 @@ export default function App() {
     );
   }
 
-  return isLoggedIn ? (
-    <HomeScreen />
-  ) : (
-    <LoginScreen onLoginSuccess={() => setIsLoggedIn(true)} />
-  );
+  if (screen === "login") {
+    return <LoginScreen onLoginSuccess={() => setScreen("camera")} />;
+  }
+
+  if (screen === "settings") {
+    return <HomeScreen onDone={() => setScreen("camera")} />;
+  }
+
+  return <CameraScreen onOpenSettings={() => setScreen("settings")} />;
 }

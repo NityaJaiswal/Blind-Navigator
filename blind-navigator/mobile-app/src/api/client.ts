@@ -1,5 +1,5 @@
 // Change this if your PC's IP address changes (run `ipconfig` to check)
-const BASE_URL = "http://10.231.92.28:8000";
+const BASE_URL = "http://192.168.31.217:8000";
 
 export async function apiFetch(
     endpoint: string,
