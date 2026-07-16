@@ -8,9 +8,17 @@ import {
     TextInput,
     ActivityIndicator,
     Alert,
+    Switch,
+    ScrollView,
 } from "react-native";
 import { listContacts, addContact, deleteContact, Contact } from "../api/contacts";
 import { listDetections, listAlerts } from "../api/history";
+import * as SecureStore from "expo-secure-store";
+import BleManager from "../ble/BleManager";
+import ObjectDetector from "../detection/ObjectDetector";
+import ColorDetector from "../detection/ColorDetector";
+import TtsEngine from "../tts/TtsEngine";
+import { getBaseUrl, updateBaseUrl } from "../api/client";
 
 interface Props {
     onBackToCamera: () => void;
@@ -76,12 +84,106 @@ function MenuItem({
 }
 
 function SettingsView() {
+    const [backendUrl, setBackendUrl] = useState("http://192.168.31.217:8000");
+    const [simulatorMode, setSimulatorMode] = useState(true);
+    const [speechRate, setSpeechRate] = useState(1.0);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        // Load settings
+        async function loadSettings() {
+            const url = await getBaseUrl();
+            setBackendUrl(url);
+
+            const isSim = BleManager.getInstance().isSimulatorMode();
+            setSimulatorMode(isSim);
+
+            const rate = TtsEngine.getInstance().getSpeechRate();
+            setSpeechRate(rate);
+        }
+        loadSettings();
+    }, []);
+
+    const handleSaveBackend = async () => {
+        if (!backendUrl.trim()) return;
+        setSaving(true);
+        try {
+            await updateBaseUrl(backendUrl.trim());
+            Alert.alert("Success", "Backend API URL updated successfully.");
+        } catch (e) {
+            Alert.alert("Error", "Failed to save Backend URL.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleToggleSimulator = (val: boolean) => {
+        setSimulatorMode(val);
+        BleManager.getInstance().setSimulatorMode(val);
+        ObjectDetector.getInstance().setSimulatorMode(val);
+        ColorDetector.getInstance().setSimulatorMode(val);
+    };
+
+    const handleRateChange = (val: number) => {
+        setSpeechRate(val);
+        TtsEngine.getInstance().setSpeechRate(val);
+    };
+
     return (
-        <View style={styles.viewContainer}>
-            <Text style={styles.placeholderText}>
-                Settings options will go here (e.g. voice speed, alert sensitivity).
-            </Text>
-        </View>
+        <ScrollView style={styles.viewContainer}>
+            <Text style={styles.settingsSectionTitle}>Backend Configuration</Text>
+            <View style={styles.settingItem}>
+                <Text style={styles.settingsLabel}>Server Endpoint URL</Text>
+                <TextInput
+                    style={styles.settingsInput}
+                    value={backendUrl}
+                    onChangeText={setBackendUrl}
+                    placeholder="http://192.168.x.x:8000"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                />
+                <TouchableOpacity style={styles.saveButton} onPress={handleSaveBackend} disabled={saving}>
+                    <Text style={styles.buttonText}>{saving ? "Saving..." : "Save Endpoint"}</Text>
+                </TouchableOpacity>
+            </View>
+
+            <Text style={styles.settingsSectionTitle}>Hardware Settings</Text>
+            <View style={styles.switchSetting}>
+                <View style={styles.settingTexts}>
+                    <Text style={styles.settingsLabel}>Simulate BLE & AI Band</Text>
+                    <Text style={styles.settingsSubLabel}>Uses mock telemetry and class predictions when hardware is disconnected.</Text>
+                </View>
+                <Switch
+                    value={simulatorMode}
+                    onValueChange={handleToggleSimulator}
+                    trackColor={{ false: "#767577", true: "#81b0ff" }}
+                    thumbColor={simulatorMode ? "#4f8cff" : "#f4f3f4"}
+                />
+            </View>
+
+            <Text style={styles.settingsSectionTitle}>Audio & Voice Guidance</Text>
+            <View style={styles.settingItem}>
+                <Text style={styles.settingsLabel}>Speech Speed ({speechRate.toFixed(2)}x)</Text>
+                <View style={styles.rateButtonContainer}>
+                    {[0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((rate) => (
+                        <TouchableOpacity
+                            key={rate}
+                            style={[
+                                styles.rateButton,
+                                speechRate === rate && styles.rateButtonActive,
+                            ]}
+                            onPress={() => handleRateChange(rate)}
+                        >
+                            <Text style={[
+                                styles.rateButtonText,
+                                speechRate === rate && styles.rateButtonTextActive
+                            ]}>{rate}x</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </View>
+            <View style={{ height: 40 }} />
+        </ScrollView>
     );
 }
 
@@ -307,4 +409,79 @@ const styles = StyleSheet.create({
     },
     contactName: { fontSize: 16, fontWeight: "600" },
     contactPhone: { fontSize: 14, color: "#666", marginTop: 2 },
+    settingsSectionTitle: {
+        fontSize: 16,
+        fontWeight: "700",
+        color: "#333",
+        marginTop: 20,
+        marginBottom: 10,
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+    },
+    settingItem: {
+        marginBottom: 20,
+    },
+    settingsLabel: {
+        fontSize: 15,
+        fontWeight: "600",
+        color: "#444",
+        marginBottom: 8,
+    },
+    settingsSubLabel: {
+        fontSize: 12,
+        color: "#888",
+    },
+    settingsInput: {
+        borderWidth: 1,
+        borderColor: "#ddd",
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 10,
+        fontSize: 15,
+        backgroundColor: "#fafafa",
+    },
+    saveButton: {
+        backgroundColor: "#4f8cff",
+        borderRadius: 8,
+        padding: 12,
+        alignItems: "center",
+    },
+    switchSetting: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: "#eee",
+        marginBottom: 15,
+    },
+    settingTexts: {
+        flex: 1,
+        marginRight: 10,
+    },
+    rateButtonContainer: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        marginHorizontal: -4,
+    },
+    rateButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: "#ddd",
+        margin: 4,
+    },
+    rateButtonActive: {
+        backgroundColor: "#4f8cff",
+        borderColor: "#4f8cff",
+    },
+    rateButtonText: {
+        fontSize: 14,
+        color: "#555",
+    },
+    rateButtonTextActive: {
+        color: "#fff",
+        fontWeight: "600",
+    },
 });

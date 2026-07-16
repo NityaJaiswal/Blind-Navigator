@@ -1,14 +1,31 @@
 import * as SecureStore from "expo-secure-store";
 
-// Change this if your PC's IP address changes
-const BASE_URL = "http://192.168.31.217:8000";
+let cachedBaseUrl: string | null = null;
+const DEFAULT_URL = "http://192.168.0.108:8000";
 
-async function getAuthHeaders() {
+export async function getBaseUrl(): Promise<string> {
+    if (cachedBaseUrl) return cachedBaseUrl;
+    try {
+        const stored = await SecureStore.getItemAsync("backend_url");
+        if (stored) {
+            cachedBaseUrl = stored;
+            return stored;
+        }
+    } catch (e) {}
+    return DEFAULT_URL;
+}
+
+export async function updateBaseUrl(newUrl: string): Promise<void> {
+    cachedBaseUrl = newUrl;
+    await SecureStore.setItemAsync("backend_url", newUrl);
+}
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
     const token = await SecureStore.getItemAsync("access_token");
-
-    return token
-        ? { Authorization: `Bearer ${token}` }
-        : {};
+    if (token) {
+        return { Authorization: `Bearer ${token}` };
+    }
+    return {};
 }
 
 export async function apiFetch(
@@ -20,8 +37,9 @@ export async function apiFetch(
         ? await getAuthHeaders()
         : {};
 
+    const baseUrl = await getBaseUrl();
     const response = await fetch(
-        `${BASE_URL}${endpoint}`,
+        `${baseUrl}${endpoint}`,
         {
             ...options,
             headers: {
@@ -41,6 +59,4 @@ export async function apiFetch(
     }
 
     return response.json();
-}
-
-export { BASE_URL };
+}

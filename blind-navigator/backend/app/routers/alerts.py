@@ -31,8 +31,8 @@ async def create_alert(alert_data: AlertCreate, db=Depends(get_database), curren
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         
     alert_dict = alert_data.model_dump()
-    alert_dict["scenario"] = alert_data.scenario.value
-    alert_dict["action_taken"] = alert_data.action_taken.value
+    alert_dict["scenario"] = alert_data.scenario
+    alert_dict["action_taken"] = alert_data.action_taken
     
     result = await db.alerts.insert_one(alert_dict)
     inserted = await db.alerts.find_one({"_id": result.inserted_id})
