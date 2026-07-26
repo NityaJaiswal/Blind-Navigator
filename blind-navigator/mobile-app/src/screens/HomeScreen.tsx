@@ -84,7 +84,7 @@ function MenuItem({
 }
 
 function SettingsView() {
-    const [backendUrl, setBackendUrl] = useState("http://192.168.31.217:8000");
+    const [backendUrl, setBackendUrl] = useState("http://10.219.152.42:8000");
     const [simulatorMode, setSimulatorMode] = useState(true);
     const [speechRate, setSpeechRate] = useState(1.0);
     const [saving, setSaving] = useState(false);

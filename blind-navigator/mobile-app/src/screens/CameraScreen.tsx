@@ -9,6 +9,11 @@ import {
     Alert,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import {
+    Camera,
+    useCameraDevice,
+    useCameraPermission,
+} from "react-native-vision-camera";
 import { startSession, endSession } from "../api/sessions";
 import BleManager, { BLETelemetry, ConnectionState } from "../ble/BleManager";
 import AlarmHandler from "../alarmHandler/AlarmHandler";
@@ -19,6 +24,10 @@ interface Props {
 
 export default function CameraScreen({ onOpenSettings }: Props) {
     const [permission, requestPermission] = useCameraPermissions();
+    const { hasPermission, requestPermission: requestVisionPermission } =
+    useCameraPermission();
+
+const device = useCameraDevice("back");
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [connState, setConnState] = useState<ConnectionState>("disconnected");
     const [telemetry, setTelemetry] = useState<BLETelemetry | null>(null);
@@ -27,6 +36,9 @@ export default function CameraScreen({ onOpenSettings }: Props) {
     const tapTimestamps = useRef<number[]>([]);
 
     useEffect(() => {
+         if (!hasPermission) {
+        requestVisionPermission();
+    }
         let activeSessionId: string | null = null;
 
         async function initSessionAndBle() {

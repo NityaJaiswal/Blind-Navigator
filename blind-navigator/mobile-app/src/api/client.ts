@@ -1,30 +1,26 @@
 import * as SecureStore from "expo-secure-store";
 
-let cachedBaseUrl: string | null = null;
-const DEFAULT_URL = "http://192.168.0.108:8000";
+const DEFAULT_URL = "http://127.0.0.1:8000";
 
 export async function getBaseUrl(): Promise<string> {
-    if (cachedBaseUrl) return cachedBaseUrl;
-    try {
-        const stored = await SecureStore.getItemAsync("backend_url");
-        if (stored) {
-            cachedBaseUrl = stored;
-            return stored;
-        }
-    } catch (e) {}
+    // Force localhost through ADB reverse
     return DEFAULT_URL;
 }
 
 export async function updateBaseUrl(newUrl: string): Promise<void> {
-    cachedBaseUrl = newUrl;
-    await SecureStore.setItemAsync("backend_url", newUrl);
+    // Disabled temporarily for testing
+    return;
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
     const token = await SecureStore.getItemAsync("access_token");
+
     if (token) {
-        return { Authorization: `Bearer ${token}` };
+        return {
+            Authorization: `Bearer ${token}`,
+        };
     }
+
     return {};
 }
 
@@ -38,25 +34,24 @@ export async function apiFetch(
         : {};
 
     const baseUrl = await getBaseUrl();
-    const response = await fetch(
-        `${baseUrl}${endpoint}`,
-        {
-            ...options,
-            headers: {
-                "Content-Type": "application/json",
-                ...authHeaders,
-                ...(options.headers || {}),
-            },
-        }
-    );
+
+    const url = `${baseUrl}${endpoint}`;
+console.log("API URL:", url);
+
+const response = await fetch(url, {
+        ...options,
+        headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+            ...(options.headers || {}),
+        },
+    });
 
     if (!response.ok) {
         const errorBody = await response.text();
 
-        throw new Error(
-            `API error ${response.status}: ${errorBody}`
-        );
+        throw new Error(`API error ${response.status}: ${errorBody}`);
     }
 
     return response.json();
-}
+}
