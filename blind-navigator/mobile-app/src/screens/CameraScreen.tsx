@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
     View,
     Text,
@@ -15,12 +15,22 @@ import {
     useCameraPermission,
 } from "react-native-vision-camera";
 import { startSession, endSession } from "../api/sessions";
+import { detectObjects, logDetection } from "../api/detection";
 import BleManager, { BLETelemetry, ConnectionState } from "../ble/BleManager";
 import AlarmHandler from "../alarmHandler/AlarmHandler";
+import { DetectionResult } from "../detection/ObjectDetector";
+
+/** How often to auto-capture a frame (milliseconds) */
+const CAPTURE_INTERVAL_MS = 3000;
+
+/** How many consecutive failures before pausing auto-capture */
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 interface Props {
     onOpenSettings: () => void;
 }
+
+type NetworkStatus = "online" | "offline" | "backend_down";
 
 export default function CameraScreen({ onOpenSettings }: Props) {
     const [permission, requestPermission] = useCameraPermissions();
@@ -33,7 +43,26 @@ const device = useCameraDevice("back");
     const [telemetry, setTelemetry] = useState<BLETelemetry | null>(null);
     const [connectingSession, setConnectingSession] = useState(true);
 
+    // Detection pipeline state
+    const [detectionResults, setDetectionResults] = useState<DetectionResult[]>([]);
+    const [isDetecting, setIsDetecting] = useState(false);
+    const [networkStatus, setNetworkStatus] = useState<NetworkStatus>("online");
+    const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+
     const tapTimestamps = useRef<number[]>([]);
+    const cameraRef = useRef<CameraView>(null);
+    const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const sessionIdRef = useRef<string | null>(null);
+    const isDetectingRef = useRef(false);
+
+    // Keep refs in sync with state for use in interval callbacks
+    useEffect(() => {
+        sessionIdRef.current = sessionId;
+    }, [sessionId]);
+
+    useEffect(() => {
+        isDetectingRef.current = isDetecting;
+    }, [isDetecting]);
 
     useEffect(() => {
          if (!hasPermission) {
@@ -53,7 +82,7 @@ const device = useCameraDevice("back");
                 // Set session ID in AlarmHandler
                 AlarmHandler.getInstance().setSessionId(session._id);
                 
-                // 2. Connect BLE manager (will auto-start simulator if simulator mode is active)
+                // 2. Connect BLE manager
                 const ble = BleManager.getInstance();
                 await ble.connect();
 
@@ -92,6 +121,11 @@ const device = useCameraDevice("back");
             AlarmHandler.getInstance().setSessionId(null);
             BleManager.getInstance().disconnect();
 
+            if (captureIntervalRef.current) {
+                clearInterval(captureIntervalRef.current);
+                captureIntervalRef.current = null;
+            }
+
             if (activeSessionId) {
                 endSession(activeSessionId).catch((err) => {
                     console.log("CameraScreen: Failed to end session:", err);
@@ -99,6 +133,121 @@ const device = useCameraDevice("back");
             }
         };
     }, []);
+
+    /**
+     * Capture a frame and send it to the YOLO backend for detection.
+     * Results are displayed on screen, logged to MongoDB, and pushed
+     * to AlarmHandler for voice/vibration alerting.
+     */
+    const captureAndDetect = useCallback(async () => {
+        // Guard against concurrent detection requests
+        if (isDetectingRef.current) {
+            console.log("CameraScreen: Skipping capture — detection in progress");
+            return;
+        }
+
+        if (!cameraRef.current) return;
+
+        setIsDetecting(true);
+        isDetectingRef.current = true;
+
+        try {
+            // 1. Capture photo
+            const photo = await cameraRef.current.takePictureAsync({
+                quality: 0.5,
+                skipProcessing: true,
+            });
+
+            if (!photo?.uri) {
+                console.log("CameraScreen: Capture returned no URI");
+                return;
+            }
+
+            console.log("📸 Captured:", photo.uri);
+
+            // 2. Send to YOLO backend
+            const response = await detectObjects(photo.uri);
+
+            console.log("🔍 YOLO response:", JSON.stringify(response, null, 2));
+
+            // 3. Map backend response to DetectionResult format
+            const results: DetectionResult[] = (response.detections || []).map(
+                (det: any) => ({
+                    label: det.label,
+                    confidence: det.confidence,
+                    color: "unknown", // YOLO doesn't return color; future enhancement
+                    boundingBox: det.bbox,
+                })
+            );
+
+            // 4. Update display
+            setDetectionResults(results);
+            setNetworkStatus("online");
+            setConsecutiveFailures(0);
+
+            // 5. Push to AlarmHandler for TTS/vibration alerting
+            await AlarmHandler.getInstance().handleDetections(results);
+
+            // 6. Log each detection to MongoDB
+            if (sessionIdRef.current && results.length > 0) {
+                for (const det of results) {
+                    try {
+                        await logDetection(
+                            sessionIdRef.current,
+                            det.label,
+                            det.confidence,
+                            det.color
+                        );
+                    } catch (logErr) {
+                        console.error("CameraScreen: Failed to log detection:", logErr);
+                    }
+                }
+            }
+        } catch (error: any) {
+            console.error("CameraScreen: Detection pipeline error:", error?.message || error);
+
+            setConsecutiveFailures((prev) => {
+                const newCount = prev + 1;
+                if (newCount >= MAX_CONSECUTIVE_FAILURES) {
+                    setNetworkStatus("backend_down");
+                    console.warn(
+                        `CameraScreen: ${MAX_CONSECUTIVE_FAILURES} consecutive failures — pausing auto-capture`
+                    );
+                } else {
+                    setNetworkStatus("offline");
+                }
+                return newCount;
+            });
+        } finally {
+            setIsDetecting(false);
+            isDetectingRef.current = false;
+        }
+    }, []);
+
+    /**
+     * Start periodic auto-capture once session is ready.
+     */
+    useEffect(() => {
+        if (!sessionId || connectingSession) return;
+
+        // Start auto-capture interval
+        captureIntervalRef.current = setInterval(() => {
+            // Pause if too many consecutive failures
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                return;
+            }
+            captureAndDetect();
+        }, CAPTURE_INTERVAL_MS);
+
+        console.log(`CameraScreen: Auto-capture started (every ${CAPTURE_INTERVAL_MS / 1000}s)`);
+
+        return () => {
+            if (captureIntervalRef.current) {
+                clearInterval(captureIntervalRef.current);
+                captureIntervalRef.current = null;
+            }
+        };
+    }, [sessionId, connectingSession, captureAndDetect, consecutiveFailures]);
 
     const handleScreenTap = () => {
         const now = Date.now();
@@ -110,6 +259,13 @@ const device = useCameraDevice("back");
             tapTimestamps.current = [];
             onOpenSettings();
         }
+    };
+
+    /** Retry detection after failures — resets the failure counter */
+    const handleRetry = () => {
+        setConsecutiveFailures(0);
+        setNetworkStatus("online");
+        captureAndDetect();
     };
 
     const getAlertStateText = (state: number) => {
@@ -166,7 +322,11 @@ const device = useCameraDevice("back");
 
     return (
         <Pressable style={styles.container} onPress={handleScreenTap}>
-            <CameraView style={StyleSheet.absoluteFill} facing="back" />
+            <CameraView
+                ref={cameraRef}
+                style={StyleSheet.absoluteFill}
+                facing="back"
+            />
 
             {/* Top Stats Overlay */}
             <View style={styles.topOverlay}>
@@ -206,7 +366,53 @@ const device = useCameraDevice("back");
                         ? `Active Session: ${sessionId.substring(0, 8)}...`
                         : "Offline Mode (No Session)"}
                 </Text>
+
+                {/* Detection activity indicator */}
+                {isDetecting && (
+                    <View style={styles.detectingRow}>
+                        <ActivityIndicator size="small" color="#4f8cff" />
+                        <Text style={styles.detectingText}>Detecting...</Text>
+                    </View>
+                )}
             </View>
+
+            {/* Network Status Banner */}
+            {networkStatus !== "online" && (
+                <View style={[
+                    styles.networkBanner,
+                    networkStatus === "backend_down" ? styles.networkBannerCritical : styles.networkBannerWarning,
+                ]}>
+                    <Text style={styles.networkBannerText}>
+                        {networkStatus === "backend_down"
+                            ? "⚠️ Backend unreachable — detection paused"
+                            : "⚠️ Detection failed — retrying..."}
+                    </Text>
+                    {networkStatus === "backend_down" && (
+                        <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+                            <Text style={styles.retryButtonText}>Retry</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+            )}
+
+            {/* Debug Detection Overlay — visible in development builds only */}
+            {__DEV__ && detectionResults.length > 0 && (
+                <View style={styles.detectionOverlay}>
+                    <Text style={styles.detectionOverlayTitle}>
+                        🔍 Detections ({detectionResults.length})
+                    </Text>
+                    {detectionResults.slice(0, 5).map((det, idx) => (
+                        <View key={idx} style={styles.detectionRow}>
+                            <Text style={styles.detectionLabel}>
+                                {det.label}
+                            </Text>
+                            <Text style={styles.detectionConfidence}>
+                                {Math.round(det.confidence * 100)}%
+                            </Text>
+                        </View>
+                    ))}
+                </View>
+            )}
 
             {/* Telemetry Display */}
             {telemetry && (
@@ -314,9 +520,89 @@ const styles = StyleSheet.create({
         marginTop: 4,
         fontFamily: "System",
     },
+    detectingRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginTop: 6,
+    },
+    detectingText: {
+        color: "#4f8cff",
+        fontSize: 11,
+        marginLeft: 6,
+        fontWeight: "600",
+    },
+    networkBanner: {
+        position: "absolute",
+        top: 160,
+        left: 20,
+        right: 20,
+        borderRadius: 10,
+        padding: 12,
+        alignItems: "center",
+        flexDirection: "row",
+        justifyContent: "center",
+    },
+    networkBannerWarning: {
+        backgroundColor: "rgba(255, 179, 0, 0.9)",
+    },
+    networkBannerCritical: {
+        backgroundColor: "rgba(244, 67, 54, 0.9)",
+    },
+    networkBannerText: {
+        color: "#fff",
+        fontSize: 13,
+        fontWeight: "700",
+        flex: 1,
+    },
+    retryButton: {
+        backgroundColor: "rgba(255,255,255,0.3)",
+        paddingVertical: 6,
+        paddingHorizontal: 14,
+        borderRadius: 6,
+        marginLeft: 10,
+    },
+    retryButtonText: {
+        color: "#fff",
+        fontSize: 13,
+        fontWeight: "700",
+    },
+    detectionOverlay: {
+        position: "absolute",
+        top: 200,
+        right: 20,
+        backgroundColor: "rgba(10, 14, 39, 0.85)",
+        borderRadius: 12,
+        padding: 12,
+        minWidth: 160,
+        borderWidth: 1,
+        borderColor: "rgba(79, 140, 255, 0.4)",
+    },
+    detectionOverlayTitle: {
+        color: "#4f8cff",
+        fontSize: 12,
+        fontWeight: "800",
+        marginBottom: 6,
+        letterSpacing: 0.5,
+    },
+    detectionRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        paddingVertical: 3,
+    },
+    detectionLabel: {
+        color: "#fff",
+        fontSize: 13,
+        fontWeight: "600",
+    },
+    detectionConfidence: {
+        color: "#4caf50",
+        fontSize: 13,
+        fontWeight: "700",
+        marginLeft: 12,
+    },
     telemetryOverlay: {
         position: "absolute",
-        top: "35%",
+        top: "55%",
         left: 30,
         right: 30,
         backgroundColor: "rgba(10, 14, 39, 0.8)",

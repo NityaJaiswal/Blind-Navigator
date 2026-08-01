@@ -33,6 +33,8 @@ async def create_detection(detection_data: DetectionCreate, db=Depends(get_datab
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         
     detection_dict = detection_data.model_dump()
+    detection_dict["timestamp"] = datetime.utcnow()
+
     result = await db.detections.insert_one(detection_dict)
     inserted = await db.detections.find_one({"_id": result.inserted_id})
     return format_doc(inserted)

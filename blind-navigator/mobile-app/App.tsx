@@ -12,7 +12,14 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("loading");
 
   useEffect(() => {
-    checkExistingLogin();
+    const checkExistingLogin = async () => {
+      await SecureStore.deleteItemAsync("access_token");
+      await SecureStore.deleteItemAsync("user_id");
+      await SecureStore.deleteItemAsync("user_name");
+      await SecureStore.deleteItemAsync("role");
+
+      setScreen("login");
+    };
   }, []);
 
   const checkExistingLogin = async () => {

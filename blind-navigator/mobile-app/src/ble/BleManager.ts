@@ -15,8 +15,6 @@ type ConnectionCallback = (state: ConnectionState) => void;
 class BleManager {
     private static instance: BleManager;
     private connectionState: ConnectionState = "disconnected";
-    private isSimulator: boolean = true;
-    private simulatedInterval: NodeJS.Timeout | null = null;
     
     private telemetryCallbacks: Set<TelemetryCallback> = new Set();
     private connectionCallbacks: Set<ConnectionCallback> = new Set();
@@ -36,17 +34,6 @@ class BleManager {
             BleManager.instance = new BleManager();
         }
         return BleManager.instance;
-    }
-
-    public isSimulatorMode(): boolean {
-        return this.isSimulator;
-    }
-
-    public setSimulatorMode(enabled: boolean) {
-        this.isSimulator = enabled;
-        if (!enabled && this.simulatedInterval) {
-            this.stopSimulator();
-        }
     }
 
     public getConnectionState(): ConnectionState {
@@ -80,7 +67,14 @@ class BleManager {
         this.telemetryCallbacks.forEach((cb) => cb(data));
     }
 
-    // Connect to the device (or start simulated telemetry stream)
+    /**
+     * Connect to the ESP32 BLE device.
+     *
+     * TODO: Implement real BLE scan + connect using react-native-ble-plx.
+     * Currently logs a warning and stays disconnected — the app will
+     * function without BLE (camera + YOLO + TTS still work), and the
+     * AlarmHandler gracefully handles missing telemetry.
+     */
     public async connect(): Promise<void> {
         if (this.connectionState === "connected" || this.connectionState === "connecting") {
             return;
@@ -88,105 +82,35 @@ class BleManager {
 
         this.updateConnectionState("connecting");
 
-        if (this.isSimulator) {
-            // Simulate brief delay
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            this.updateConnectionState("connected");
-            this.startSimulator();
-        } else {
-            // Real BLE implementation stub
-            // Since react-native-ble-plx needs native components not available in basic Expo Go,
-            // we log this and fallback to simulator. A developer with React Native CLI would insert
-            // BleManager.js scan and connect routines here.
-            console.log("Real BLE requires react-native-ble-plx. Falling back to simulator.");
-            await new Promise((resolve) => setTimeout(resolve, 1500));
-            this.updateConnectionState("connected");
-            this.startSimulator();
-        }
+        // Real BLE implementation placeholder:
+        // 1. Scan for devices with DEVICE_NAME_PREFIX
+        // 2. Connect to first matching device
+        // 3. Subscribe to BLE_CHARACTERISTIC_UUID for telemetry notifications
+        // 4. Parse incoming 8-byte packets into BLETelemetry
+        console.log(
+            "BleManager: Real BLE not yet implemented (requires react-native-ble-plx with native build). " +
+            "ESP32 telemetry unavailable — app will operate in camera+AI-only mode."
+        );
+
+        // Stay in "connecting" briefly, then mark as disconnected since no real device
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        this.updateConnectionState("disconnected");
     }
 
     public disconnect() {
         if (this.connectionState === "disconnected") {
             return;
         }
-
-        if (this.simulatedInterval) {
-            this.stopSimulator();
-        }
-
+        // TODO: Disconnect real BLE device
         this.updateConnectionState("disconnected");
     }
 
-    private startSimulator() {
-        if (this.simulatedInterval) return;
-
-        let cycle = 0;
-        let battery = 98;
-        
-        this.simulatedInterval = setInterval(() => {
-            cycle++;
-            
-            // Decement battery slowly
-            if (cycle % 100 === 0 && battery > 5) {
-                battery--;
-            }
-
-            // Simulate walking profile with obstacles
-            // Phase 1 (0-15s): Walking, far distance (IDLE)
-            // Phase 2 (15-30s): Obstacle approaching (ALARM)
-            // Phase 3 (30-40s): Backing off or stationary (MUTE)
-            // Phase 4 (40-50s): Rapid approach / drop-off (OVERRIDE_STOP)
-            // Phase 5 (50-60s): Reset back to clear path (IDLE)
-            const timeSec = (cycle * 2) % 60; // 2s steps
-            
-            let distance = 200;
-            let delta = 0;
-            let state = 0; // IDLE
-
-            if (timeSec < 15) {
-                // Clear path
-                distance = 180 + Math.floor(Math.random() * 20);
-                delta = Math.floor(Math.random() * 4) - 2;
-                state = 0; // IDLE
-            } else if (timeSec >= 15 && timeSec < 28) {
-                // Obstacle approaching slowly
-                // Decreasing from 140 to 60
-                const progress = (timeSec - 15) / 13;
-                distance = Math.floor(140 - progress * 80);
-                delta = -6; // constant approach
-                state = distance <= 100 ? 2 : 0; // ALARM below 100cm, else IDLE
-            } else if (timeSec >= 28 && timeSec < 38) {
-                // Mute state / standing still near obstacle
-                distance = 60 + Math.floor(Math.random() * 2);
-                delta = 0;
-                state = 1; // MUTE
-            } else if (timeSec >= 38 && timeSec < 48) {
-                // Critical danger (rapid approach / cliff / override stop)
-                const progress = (timeSec - 38) / 10;
-                distance = Math.floor(60 - progress * 35); // drops to 25cm
-                delta = -12; // fast approach speed
-                state = distance <= 45 ? 3 : 2; // OVERRIDE_STOP below 45cm, else ALARM
-            } else {
-                // Safe path reset
-                distance = 170 + Math.floor(Math.random() * 30);
-                delta = 10; // moving away
-                state = 0; // IDLE
-            }
-
-            this.notifyTelemetry({
-                distance_cm: distance,
-                delta_cm: delta,
-                state: state,
-                battery_pct: battery,
-            });
-        }, 2000); // Send updates every 2 seconds
-    }
-
-    private stopSimulator() {
-        if (this.simulatedInterval) {
-            clearInterval(this.simulatedInterval);
-            this.simulatedInterval = null;
-        }
+    /**
+     * Manually inject telemetry data. Useful for testing or when
+     * telemetry arrives from a source other than BLE (e.g., USB serial).
+     */
+    public injectTelemetry(data: BLETelemetry) {
+        this.notifyTelemetry(data);
     }
 }
 

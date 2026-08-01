@@ -33,7 +33,8 @@ async def create_alert(alert_data: AlertCreate, db=Depends(get_database), curren
     alert_dict = alert_data.model_dump()
     alert_dict["scenario"] = alert_data.scenario
     alert_dict["action_taken"] = alert_data.action_taken
-    
+    alert_dict["timestamp"] = datetime.utcnow()
+        
     result = await db.alerts.insert_one(alert_dict)
     inserted = await db.alerts.find_one({"_id": result.inserted_id})
     return format_doc(inserted)

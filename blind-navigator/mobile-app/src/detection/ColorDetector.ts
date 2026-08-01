@@ -1,18 +1,12 @@
-const REALISTIC_COLORS = [
-    "red",
-    "blue",
-    "brown",
-    "yellow",
-    "green",
-    "white",
-    "black",
-    "gray",
-    "silver",
-];
-
+/**
+ * ColorDetector — extracts dominant color from a bounding box region.
+ *
+ * Currently returns "unknown" — real pixel-sampling implementation is a
+ * future enhancement (Phase D). The class shell is preserved so call sites
+ * don't need to change when the real implementation is added.
+ */
 class ColorDetector {
     private static instance: ColorDetector;
-    private isSimulator: boolean = true;
 
     private constructor() {}
 
@@ -23,27 +17,15 @@ class ColorDetector {
         return ColorDetector.instance;
     }
 
-    public setSimulatorMode(enabled: boolean) {
-        this.isSimulator = enabled;
-    }
-
     /**
      * Determines dominant color of a bounding box region in the camera frame.
-     * In simulation mode, randomly picks from REALISTIC_COLORS.
+     * TODO: Implement real pixel sampling (canvas context or native buffers).
      */
-    public async detectDominantColor(frameData?: any, boundingBox?: [number, number, number, number]): Promise<string> {
-        if (this.isSimulator) {
-            // Simulate brief color sampling latency (10-50ms)
-            const latency = Math.floor(Math.random() * 40) + 10;
-            await new Promise((resolve) => setTimeout(resolve, latency));
-
-            const randomIdx = Math.floor(Math.random() * REALISTIC_COLORS.length);
-            return REALISTIC_COLORS[randomIdx];
-        } else {
-            // Real image pixel sampling logic would go here:
-            // e.g. using canvas context in web-fallback, or native buffers on phone.
-            return "unknown color";
-        }
+    public async detectDominantColor(
+        frameData?: any,
+        boundingBox?: [number, number, number, number]
+    ): Promise<string> {
+        return "unknown";
     }
 }
 
