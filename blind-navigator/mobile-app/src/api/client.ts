@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 
-const DEFAULT_URL = "http://192.168.29.149:8000";
+const DEFAULT_URL = "http://192.168.29.191:8000";
 
 export async function getBaseUrl(): Promise<string> {
     try {

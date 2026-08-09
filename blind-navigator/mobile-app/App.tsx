@@ -11,21 +11,14 @@ type Screen = "loading" | "login" | "camera" | "settings";
 export default function App() {
   const [screen, setScreen] = useState<Screen>("loading");
 
-  useEffect(() => {
-    const checkExistingLogin = async () => {
-      await SecureStore.deleteItemAsync("access_token");
-      await SecureStore.deleteItemAsync("user_id");
-      await SecureStore.deleteItemAsync("user_name");
-      await SecureStore.deleteItemAsync("role");
-
-      setScreen("login");
-    };
-  }, []);
-
   const checkExistingLogin = async () => {
     const token = await SecureStore.getItemAsync("access_token");
     setScreen(token ? "camera" : "login");
   };
+
+  useEffect(() => {
+    checkExistingLogin();
+  }, []);
 
   const handleLogout = async () => {
     await SecureStore.deleteItemAsync("access_token");
@@ -66,6 +59,7 @@ export default function App() {
   return (
     <CameraScreen
       onOpenSettings={() => setScreen("settings")}
+      onLogout={handleLogout}
     />
   );
 }

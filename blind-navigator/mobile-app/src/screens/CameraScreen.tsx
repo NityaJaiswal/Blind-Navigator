@@ -28,11 +28,12 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 
 interface Props {
     onOpenSettings: () => void;
+    onLogout?: () => void;
 }
 
 type NetworkStatus = "online" | "offline" | "backend_down";
 
-export default function CameraScreen({ onOpenSettings }: Props) {
+export default function CameraScreen({ onOpenSettings, onLogout }: Props) {
     const [permission, requestPermission] = useCameraPermissions();
     const { hasPermission, requestPermission: requestVisionPermission } =
     useCameraPermission();
@@ -88,13 +89,22 @@ const device = useCameraDevice("back");
 
                 // 3. Start Alarm Handler listening to BLE events
                 AlarmHandler.getInstance().startListening();
-            } catch (error) {
+            } catch (error: any) {
                 console.log("❌ CameraScreen: Initialization error:", error);
-                Alert.alert(
-                    "Connection Failed",
-                    "Could not start session on backend. Please check backend URL in settings.",
-                    [{ text: "OK" }]
-                );
+                const isUnauthorized = error?.message?.includes("401") || (typeof error === 'string' && error.includes("401"));
+                if (isUnauthorized) {
+                    Alert.alert(
+                        "Session Expired",
+                        "Your login session has expired. Please log in again.",
+                        [{ text: "OK", onPress: () => onLogout && onLogout() }]
+                    );
+                } else {
+                    Alert.alert(
+                        "Connection Failed",
+                        "Could not start session on backend. Please check backend URL in settings.",
+                        [{ text: "OK" }]
+                    );
+                }
             } finally {
                 setConnectingSession(false);
             }
@@ -443,12 +453,6 @@ const device = useCameraDevice("back");
                 <Text style={styles.instructionText}>
                     Triple tap screen to open settings
                 </Text>
-                <TouchableOpacity
-                    style={styles.settingsButton}
-                    onPress={onOpenSettings}
-                >
-                    <Text style={styles.buttonText}>Settings Menu</Text>
-                </TouchableOpacity>
             </View>
         </Pressable>
     );
@@ -648,12 +652,5 @@ const styles = StyleSheet.create({
         textShadowColor: "rgba(0,0,0,0.5)",
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 2,
-    },
-    settingsButton: {
-        width: "100%",
-        backgroundColor: "rgba(79, 140, 255, 0.9)",
-        borderRadius: 12,
-        padding: 16,
-        alignItems: "center",
     },
 });
